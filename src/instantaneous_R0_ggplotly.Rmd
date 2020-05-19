@@ -1,0 +1,199 @@
+---
+title: "Instantaneous R0: Geofacet by Wisconsin Counties"
+author: "Srikanth Aravamuthan"
+date: "May 11, 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  # cache = TRUE, 
+  message = FALSE,
+  warning = FALSE 
+)
+
+# https://cran.r-project.org/src/contrib/Archive/MCMCpack/
+library(EpiEstim)
+library(tidyverse)
+
+```
+
+```{r}
+wi_county_data <- read_csv("https://afidsi-covid19.s3.amazonaws.com/wi_county_data.csv")
+
+df <- 
+  wi_county_data %>% 
+  select_at(vars(Admin2_cases,matches("^[0-9]{1,2}/[0-9]{1,2}/[0-9]{2}_cases"))) %>% 
+  rename(county = Admin2_cases) %>% 
+  pivot_longer(-county,
+               names_to = "date",
+               values_to = "cases") %>% 
+  mutate(date = stringr::str_remove(date, "_cases"),
+         date = lubridate::mdy(date)) %>% 
+  group_by(county) %>% 
+  arrange(date) %>% 
+  mutate(new.cases = as.integer(cases - lag(cases, n = 1, default = 0)),
+         new.cases = ifelse(new.cases < 0, 0, new.cases)) %>% 
+  ungroup()
+
+min.date <- 
+  df %>% 
+  filter(cases != 0) %>% 
+  summarize(min.date = min(date)) %>% 
+  pull()
+
+max.date <- 
+  df %>% 
+  filter(cases != 0) %>% 
+  summarize(max.date = max(date)) %>% 
+  pull()
+
+```
+ 
+```{r}
+df.r <- 
+  df %>% 
+  group_by(county) %>% 
+  arrange(date) %>% 
+  filter(
+    cases != 0,
+    last(cases) >= 10,
+    sum(cases != 0) >= 7
+    # sum(cases) != 0,
+    # sum(cases != 0) >= 7
+  ) %>% 
+  ungroup() %>% 
+  select(county,new.cases) %>% 
+  # uncount(new.cases) %>% 
+  group_by(county) %>% 
+  nest(new.cases) %>% 
+  mutate(R = purrr::map(data, function(df) EpiEstim::estimate_R(df$new.cases, 
+                                                                method="parametric_si",
+                                                                config = make_config(list(mean_si = 7.5, 
+                                                                                          std_si = 3.4)))$R)) %>% 
+  select(-data) %>% 
+  unnest(R) %>% 
+  ungroup()
+
+max.r <- 
+  df.r %>% 
+  summarize(max.r = max(`Quantile.0.975(R)`)) %>% 
+  pull()
+
+```
+
+
+
+```{r}
+library(geofacet)
+
+mygrid <- data.frame(
+  name = c("Douglas County", "Bayfield County", "Washburn County", "Sawyer County", "Ashland County", "Iron County", "Oneida County", "Vilas County", "Polk County", "Burnett County", "Barron County", "Chippewa County", "Rusk County", "Price County", "Lincoln County", "Langlade County", "Forest County", "Florence County", "Marinette County", "St. Croix County", "Dunn County", "Eau Claire County", "Clark County", "Taylor County", "Marathon County", "Shawano County", "Menominee County", "Oconto County", "Calumet County", "Door County", "Pierce County", "Pepin County", "Trempealeau County", "Jackson County", "Wood County", "Portage County", "Waushara County", "Waupaca County", "Outagamie County", "Brown County", "Kewaunee County", "Buffalo County", "La Crosse County", "Monroe County", "Juneau County", "Adams County", "Green Lake County", "Winnebago County", "Washington County", "Sheboygan County", "Manitowoc County", "Vernon County", "Richland County", "Columbia County", "Marquette County", "Dodge County", "Fond du Lac County", "Ozaukee County", "Crawford County", "Iowa County", "Sauk County", "Dane County", "Jefferson County", "Waukesha County", "Milwaukee County", "Grant County", "Lafayette County", "Green County", "Rock County", "Walworth County", "Kenosha County", "Racine County"),
+  code = c("douglas", "bayfield", "washburn", "sawyer", "ashland", "iron", "oneida", "vilas", "polk", "burnett", "barron", "chippewa", "rusk", "price", "lincoln", "langlade", "forest", "florence", "marinette", "st croix", "dunn", "eau claire", "clark", "taylor", "marathon", "shawano", "menominee", "oconto", "calumet", "door", "pierce", "pepin", "trempealeau", "jackson", "wood", "portage", "waushara", "waupaca", "outagamie", "brown", "kewaunee", "buffalo", "la crosse", "monroe", "juneau", "adams", "green lake", "winnebago", "washington", "sheboygan", "manitowoc", "vernon", "richland", "columbia", "marquette", "dodge", "fond du lac", "ozaukee", "crawford", "iowa", "sauk", "dane", "jefferson", "waukesha", "milwaukee", "grant", "lafayette", "green", "rock", "walworth", "kenosha", "racine"),
+  row = c(1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7, 7, 7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9),
+  col = c(3, 4, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 5, 6, 7, 8, 9, 10, 11, 5, 6, 7, 8, 9, 10, 11, 5, 6, 7, 8, 9, 10, 11),
+  stringsAsFactors = FALSE
+) %>% 
+  mutate(row = ifelse(name == "Burnett County", 2, row),
+         col = ifelse(name == "Polk County", 2, col),
+         col = col-1)
+
+```
+
+```{r}
+df.gg <- 
+  df.r %>%
+  group_by(county) %>%
+  mutate(Date = max.date-max(t_end)+t_end) %>%
+  ungroup() %>%
+  mutate(
+    # Date = lubridate::mdy("1/22/20")+t_end-1,
+    code = county %>%
+      str_remove(" County") %>%
+      str_to_lower() %>%
+      str_remove("[:punct:]")
+  ) %>%
+  group_by(county) %>%
+  mutate(
+    Risk = case_when(
+      last(Date) == max.date & last(`Mean(R)`) < 1 ~ "Low",
+      last(Date) == max.date & last(`Mean(R)`) < 1.2 ~ "Medium",
+      last(Date) == max.date & last(`Mean(R)`) >= 1.2 ~ "High",
+      TRUE ~ NA_character_
+    )
+  ) %>% 
+  ungroup() %>%
+  mutate(
+    yintercept = case_when(
+      Date == max.date ~ 1,
+      TRUE ~ NA_real_
+    )
+  ) 
+gg <- 
+  df.gg %>% 
+  ggplot() + 
+  geom_rect(data = df.gg %>% 
+              filter(Date == max.date),
+            aes(fill = Risk,
+                xmin = min.date,
+                xmax = max.date,
+                ymin = 0,
+                ymax = max.r),
+            alpha = 0.1) +
+  scale_fill_manual(breaks = c("High","Medium","Low","Low-Case Counts"),
+                    values = c("red","yellow", "green", "white")) +
+  geom_ribbon(aes(x = Date, y = `Mean(R)`,
+                  ymin = `Quantile.0.025(R)`,
+                  ymax = `Quantile.0.975(R)`),
+                  fill = "gray80",
+              alpha = 0.5) +
+  # geom_hline(aes(yintercept = yintercept),
+  #            color = "gray50",
+  #            alpha = 0.5) +
+  geom_line(aes(x = Date, y = `Mean(R)`),
+            color = "red") +
+  # scale_color_gradient(
+  #   # guide = guide_colorbar(frame.colour = "black",
+  #   #                        frame.linewidth = 0.5,
+  #   #                        ticks.colour = "black",
+  #   #                        ticks.linewidth = 0.5),
+  #   low = "red1",
+  #   high = "purple4"
+  # ) +
+  facet_geo(~ code, grid = mygrid, label = "name") + 
+  theme_classic() + 
+  theme(
+        # axis.text.x = element_blank(),
+        # axis.line.x = element_blank(),
+        # axis.ticks.x = element_blank(),
+        axis.text.x = element_text(size = 4,
+                                   hjust = 1,
+                                   angle = 30),
+        axis.text.y = element_text(size = 4),
+        strip.background = element_rect(fill = "white",
+                                        color = "white"),
+        strip.text = element_text(size = 4,
+                                  margin = margin(0.1, 0, 0.1, 0, "lines"))
+  ) + 
+  theme(
+    panel.spacing = unit(0.0, "lines"),
+    legend.position = "none"
+    # legend.key = element_rect(color = "black", size = 0.25)
+  )
+
+gg
+
+```
+
+```{r}
+library(plotly)
+
+gg %>% 
+  ggplotly() %>% 
+  layout(
+    xaxis = list(type = "date",
+                 tickformat = "%B %d, %Y")
+  )
+
+```
