@@ -129,11 +129,16 @@ df.gg <-
       Date == max.date ~ 1,
       TRUE ~ NA_real_
     )
-  ) 
+  ) %>% 
+  mutate(Date = as.numeric(Date) * 24 * 60 * 60 * 1000)
+
+min.date <- as.numeric(min.date) * 24 * 60 * 60 * 1000
+max.date <- as.numeric(max.date) * 24 * 60 * 60 * 1000
+
 gg <- 
   df.gg %>% 
   ggplot() + 
-  geom_rect(data = df.gg %>% 
+  geom_rect(data = df.gg %>%
               filter(Date == max.date),
             aes(fill = Risk,
                 xmin = min.date,
@@ -178,11 +183,13 @@ gg <-
   ) + 
   theme(
     panel.spacing = unit(0.0, "lines"),
-    legend.position = "none"
-    # legend.key = element_rect(color = "black", size = 0.25)
+    legend.position = "none",
+    legend.key = element_rect(color = "black", size = 0.25)
   )
 
 gg
+
+# ggsave("instantaneous_r0_geofacet_wi.svg", width = 8, height = 6, dpi = 1200)
 
 ```
 
@@ -193,7 +200,31 @@ gg %>%
   ggplotly() %>% 
   layout(
     xaxis = list(type = "date",
-                 tickformat = "%B %d, %Y")
+                 tickformat = "%b %d"),
+    xaxis2 = list(type = "date",
+                 tickformat = "%b %d"),
+    xaxis3 = list(type = "date",
+                 tickformat = "%b %d"),
+    xaxis4 = list(type = "date",
+                 tickformat = "%b %d"),
+    xaxis5 = list(type = "date",
+                 tickformat = "%b %d"),
+    xaxis6 = list(type = "date",
+                 tickformat = "%b %d"),
+    xaxis7 = list(type = "date",
+                 tickformat = "%b %d"),
+    xaxis8 = list(type = "date",
+                 tickformat = "%b %d"),
+    xaxis9 = list(type = "date",
+                 tickformat = "%b %d"),
+    xaxis10 = list(type = "date",
+                 tickformat = "%b %d"),
+    xaxis11 = list(type = "date",
+                 tickformat = "%b %d"),
+    xaxis12 = list(type = "date",
+                 tickformat = "%b %d"),
+    xaxis13 = list(type = "date",
+                 tickformat = "%b %d")
   )
 
 ```
