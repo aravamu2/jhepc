@@ -22,6 +22,12 @@ library(tidyverse)
 ```{r}
 wi_county_data <- read_csv("https://afidsi-covid19.s3.amazonaws.com/wi_county_data.csv")
 
+df.county <- 
+  wi_county_data %>% 
+  select(Admin2_cases) %>% 
+  rename(county = Admin2_cases) %>% 
+  distinct()
+
 df <- 
   wi_county_data %>% 
   select_at(vars(Admin2_cases,matches("^[0-9]{1,2}/[0-9]{1,2}/[0-9]{2}_cases"))) %>% 
@@ -103,7 +109,8 @@ mygrid <- data.frame(
 
 ```{r}
 df.gg <- 
-  df.r %>%
+  df.county %>% 
+  left_join(df.r) %>%
   group_by(county) %>%
   mutate(Date = max.date-max(t_end)+t_end) %>%
   ungroup() %>%
@@ -120,6 +127,7 @@ df.gg <-
       last(Date) == max.date & last(`Mean(R)`) < 1 ~ "Low",
       last(Date) == max.date & last(`Mean(R)`) < 1.2 ~ "Medium",
       last(Date) == max.date & last(`Mean(R)`) >= 1.2 ~ "High",
+      is.na(last(`Mean(R)`)) ~ "Low-Case Counts",
       TRUE ~ NA_character_
     )
   ) %>% 
@@ -139,7 +147,7 @@ gg <-
   df.gg %>% 
   ggplot() + 
   geom_rect(data = df.gg %>%
-              filter(Date == max.date),
+              filter(Date == max.date | is.na(Date)),
             aes(fill = Risk,
                 xmin = min.date,
                 xmax = max.date,
