@@ -1,0 +1,73 @@
+name,code,row,col
+Douglas County,douglas,1,2
+Bayfield County,bayfield,1,3
+Washburn County,washburn,2,2
+Sawyer County,sawyer,2,3
+Ashland County,ashland,2,4
+Iron County,iron,2,5
+Oneida County,oneida,2,6
+Vilas County,vilas,2,7
+Polk County,polk,3,1
+Burnett County,burnett,2,1
+Barron County,barron,3,2
+Chippewa County,chippewa,3,3
+Rusk County,rusk,3,4
+Price County,price,3,5
+Lincoln County,lincoln,3,6
+Langlade County,langlade,3,7
+Forest County,forest,3,8
+Florence County,florence,3,9
+Marinette County,marinette,3,10
+St. Croix County,st croix,4,1
+Dunn County,dunn,4,2
+Eau Claire County,eau claire,4,3
+Clark County,clark,4,4
+Taylor County,taylor,4,5
+Marathon County,marathon,4,6
+Shawano County,shawano,4,7
+Menominee County,menominee,4,8
+Oconto County,oconto,4,9
+Calumet County,calumet,4,10
+Door County,door,4,12
+Pierce County,pierce,5,1
+Pepin County,pepin,5,2
+Trempealeau County,trempealeau,5,3
+Jackson County,jackson,5,4
+Wood County,wood,5,5
+Portage County,portage,5,6
+Waushara County,waushara,5,7
+Waupaca County,waupaca,5,8
+Outagamie County,outagamie,5,9
+Brown County,brown,5,10
+Kewaunee County,kewaunee,5,11
+Buffalo County,buffalo,6,2
+La Crosse County,la crosse,6,3
+Monroe County,monroe,6,4
+Juneau County,juneau,6,5
+Adams County,adams,6,6
+Green Lake County,green lake,6,7
+Winnebago County,winnebago,6,8
+Washington County,washington,6,9
+Sheboygan County,sheboygan,6,10
+Manitowoc County,manitowoc,6,11
+Vernon County,vernon,7,4
+Richland County,richland,7,5
+Columbia County,columbia,7,6
+Marquette County,marquette,7,7
+Dodge County,dodge,7,8
+Fond du Lac County,fond du lac,7,9
+Ozaukee County,ozaukee,7,10
+Crawford County,crawford,8,4
+Iowa County,iowa,8,5
+Sauk County,sauk,8,6
+Dane County,dane,8,7
+Jefferson County,jefferson,8,8
+Waukesha County,waukesha,8,9
+Milwaukee County,milwaukee,8,10
+Grant County,grant,9,4
+Lafayette County,lafayette,9,5
+Green County,green,9,6
+Rock County,rock,9,7
+Walworth County,walworth,9,8
+Kenosha County,kenosha,9,9
+Racine County,racine,9,10
