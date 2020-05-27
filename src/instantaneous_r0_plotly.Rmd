@@ -1,0 +1,252 @@
+---
+title: "Instantaneous R0: Geofacet by Wisconsin Counties"
+author: "Srikanth Aravamuthan"
+date: "May 11, 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  # cache = TRUE, 
+  message = FALSE,
+  warning = FALSE 
+)
+
+# https://cran.r-project.org/src/contrib/Archive/MCMCpack/
+library(EpiEstim)
+library(tidyverse)
+library(plotly)
+
+```
+
+```{r}
+wi_county_data <- read_csv("https://afidsi-covid19.s3.amazonaws.com/wi_county_data.csv")
+
+df.county <- 
+  wi_county_data %>% 
+  select(Admin2_cases) %>% 
+  rename(county = Admin2_cases) %>% 
+  distinct()
+
+df <- 
+  wi_county_data %>% 
+  select_at(vars(Admin2_cases,matches("^[0-9]{1,2}/[0-9]{1,2}/[0-9]{2}_cases"))) %>% 
+  rename(county = Admin2_cases) %>% 
+  pivot_longer(-county,
+               names_to = "date",
+               values_to = "cases") %>% 
+  mutate(date = stringr::str_remove(date, "_cases"),
+         date = lubridate::mdy(date)) %>% 
+  group_by(county) %>% 
+  arrange(date) %>% 
+  mutate(new.cases = as.integer(cases - lag(cases, n = 1, default = 0)),
+         new.cases = ifelse(new.cases < 0, 0, new.cases)) %>% 
+  ungroup()
+
+df.case <- 
+  df %>% 
+  group_by(county) %>% 
+  arrange(date) %>% 
+  mutate(active.cases = as.integer(cases - lag(cases, n = 14, default = 0)),
+         active.cases = ifelse(active.cases < 0, 0, active.cases)) %>% 
+  ungroup()
+
+min.date <- 
+  df %>% 
+  filter(cases != 0) %>% 
+  summarize(min.date = min(date)) %>% 
+  pull()
+
+max.date <- 
+  df %>% 
+  filter(cases != 0) %>% 
+  summarize(max.date = max(date)) %>% 
+  pull()
+
+```
+ 
+```{r}
+df.r <- 
+  df %>% 
+  group_by(county) %>% 
+  arrange(date) %>% 
+  filter(
+    cases != 0,
+    last(cases) >= 10,
+    sum(cases != 0) >= 7
+    # sum(cases) != 0,
+    # sum(cases != 0) >= 7
+  ) %>% 
+  ungroup() %>% 
+  select(county,new.cases) %>% 
+  # uncount(new.cases) %>% 
+  group_by(county) %>% 
+  nest(new.cases) %>% 
+  mutate(R = purrr::map(data, function(df) EpiEstim::estimate_R(df$new.cases, 
+                                                                method="parametric_si",
+                                                                config = make_config(list(mean_si = 7.5, 
+                                                                                          std_si = 3.4)))$R)) %>% 
+  select(-data) %>% 
+  unnest(R) %>% 
+  ungroup()
+
+max.r <- 
+  df.r %>% 
+  summarize(max.r = max(`Quantile.0.975(R)`)) %>% 
+  pull()
+
+```
+
+
+
+```{r}
+df.gg <- 
+  df.county %>% 
+  left_join(df.r) %>%
+  group_by(county) %>%
+  mutate(date = max.date-max(t_end)+t_end) %>%
+  ungroup() %>%
+  mutate(
+    # Date = lubridate::mdy("1/22/20")+t_end-1,
+    code = county %>%
+      str_remove(" County") %>%
+      str_to_lower() %>%
+      str_remove("[:punct:]")
+  ) %>%
+  group_by(county) %>%
+  mutate(
+    Risk = case_when(
+      last(date) == max.date & last(`Mean(R)`) < 1 ~ "Low",
+      last(date) == max.date & last(`Mean(R)`) < 1.2 ~ "Medium",
+      last(date) == max.date & last(`Mean(R)`) >= 1.2 ~ "High",
+      is.na(last(`Mean(R)`)) ~ "Low-Case Counts",
+      TRUE ~ NA_character_
+    )
+  ) %>% 
+  ungroup() %>%
+  mutate(
+    yintercept = case_when(
+      date == max.date ~ 1,
+      TRUE ~ NA_real_
+    )
+  ) %>% 
+  rename(Date = date)
+
+# %>% 
+#   mutate(Date = as.numeric(Date) * 24 * 60 * 60 * 1000)
+# 
+# min.date <- as.numeric(min.date) * 24 * 60 * 60 * 1000
+# max.date <- as.numeric(max.date) * 24 * 60 * 60 * 1000
+
+```
+
+```{r}
+fig1 <- plot_ly(data = df.gg,
+               x = ~`Date`,
+               y = ~`Mean(R)`,
+               color = ~county,
+               opacity = 0.5,
+               # symbol = ~str_detect(metro_name, "WI"),
+               text = ~paste0("</br>", county,
+                             "</br>", Date,
+                             "</br>Instantaneous R0 (Mean): ",
+                             round(`Mean(R)`, 3), 
+                             "</br>Instantaneous R0 (2.5 Percentile): ", 
+                             round(`Quantile.0.025(R)`, 3),
+                             "</br>Instantaneous R0 (97.5 Percentile): ", 
+                             round(`Quantile.0.975(R)`, 3)),
+               type = "scatter",
+               mode = 'lines+markers',
+               colors = "Paired",
+               # alpha = 0.5,
+               hoverinfo = "text") %>% 
+  layout(title = "") %>% 
+  layout(xaxis = list(title = "Date"),
+         yaxis = list(title = "Instantaneous R0")) %>% 
+  config(doubleClickDelay = 500)
+
+fig1
+
+```
+
+
+
+```{r}
+df.gg <- 
+  df.r %>%
+  group_by(county) %>%
+  mutate(date = max.date-max(t_end)+t_end) %>%
+  ungroup() %>%
+  left_join(df.case, by = c("county","date")) %>% 
+  mutate(
+    # Date = lubridate::mdy("1/22/20")+t_end-1,
+    code = county %>%
+      str_remove(" County") %>%
+      str_to_lower() %>%
+      str_remove("[:punct:]")
+  ) %>%
+  group_by(county) %>%
+  mutate(
+    Risk = case_when(
+      last(date) == max.date & last(`Mean(R)`) < 1 ~ "Low",
+      last(date) == max.date & last(`Mean(R)`) < 1.2 ~ "Medium",
+      last(date) == max.date & last(`Mean(R)`) >= 1.2 ~ "High",
+      is.na(last(`Mean(R)`)) ~ "Low-Case Counts",
+      TRUE ~ NA_character_
+    )
+  ) %>% 
+  ungroup() %>%
+  mutate(
+    yintercept = case_when(
+      date == max.date ~ 1,
+      TRUE ~ NA_real_
+    )
+  ) %>% 
+  rename(Date = date)
+
+# %>% 
+#   mutate(Date = as.numeric(Date) * 24 * 60 * 60 * 1000)
+# 
+# min.date <- as.numeric(min.date) * 24 * 60 * 60 * 1000
+# max.date <- as.numeric(max.date) * 24 * 60 * 60 * 1000
+
+```
+
+
+
+```{r}
+fig2 <- plot_ly(data = df.gg,
+               x = ~`active.cases`,
+               y = ~`Mean(R)`,
+               color = ~county,
+               opacity = 0.5,
+               # symbol = ~str_detect(metro_name, "WI"),
+               text = ~paste0("</br>", county,
+                             "</br>", Date,
+                             "</br>Instantaneous R0 (Mean): ",
+                             round(`Mean(R)`, 3), 
+                             "</br>Instantaneous R0 (2.5 Percentile): ", 
+                             round(`Quantile.0.025(R)`, 3),
+                             "</br>Instantaneous R0 (97.5 Percentile): ", 
+                             round(`Quantile.0.975(R)`, 3)),
+               type = "scatter",
+               mode = 'lines+markers',
+               colors = "Paired",
+               # alpha = 0.5,
+               hoverinfo = "text") %>% 
+  layout(title = "") %>% 
+  layout(xaxis = list(title = "Active Cases"),
+         yaxis = list(title = "Instantaneous R0")) %>% 
+  config(doubleClickDelay = 500)
+
+fig2
+
+```
+
+
+
+
+
+
+
