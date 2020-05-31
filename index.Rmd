@@ -1,0 +1,599 @@
+---
+title: "Instantaneous $R_0$: Geofacet by Wisconsin Counties"
+# author: "Srikanth Aravamuthan"
+date: "Updated `r format(Sys.time(), '%B %d, %Y, %I:00 %p %Z')`"
+output: 
+  html_document:
+    code_folding: hide
+header-includes:
+  - \usepackage{xcolor}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  # cache = TRUE, 
+  message = FALSE,
+  warning = FALSE 
+)
+
+# https://cran.r-project.org/src/contrib/Archive/MCMCpack/
+library(EpiEstim)
+library(tidyverse)
+library(patchwork)
+library(maps)
+
+```
+
+<style> 
+.indent { 
+  padding-left: 50pt; 
+  padding-right: 50pt; 
+} 
+
+</style>
+
+```{r}
+wi_county_data <- read_csv("https://afidsi-covid19.s3.amazonaws.com/wi_county_data.csv")
+
+df.county <- 
+  wi_county_data %>% 
+  select(Admin2_cases) %>% 
+  rename(county = Admin2_cases) %>% 
+  distinct()
+
+df <- 
+  wi_county_data %>% 
+  select_at(vars(Admin2_cases,matches("^[0-9]{1,2}/[0-9]{1,2}/[0-9]{2}_cases"))) %>% 
+  rename(county = Admin2_cases) %>% 
+  pivot_longer(-county,
+               names_to = "date",
+               values_to = "cases") %>% 
+  mutate(date = stringr::str_remove(date, "_cases"),
+         date = lubridate::mdy(date)) %>% 
+  group_by(county) %>% 
+  arrange(date) %>% 
+  mutate(new.cases = as.integer(cases - lag(cases, n = 1, default = 0)),
+         new.cases = ifelse(new.cases < 0, 0, new.cases)) %>% 
+  ungroup()
+
+min.date <- 
+  df %>% 
+  filter(cases != 0) %>% 
+  summarize(min.date = min(date)) %>% 
+  pull()
+
+max.date <- 
+  df %>% 
+  filter(cases != 0) %>% 
+  summarize(max.date = max(date)) %>% 
+  pull()
+
+```
+ 
+```{r}
+df.r <- 
+  df %>% 
+  group_by(county) %>% 
+  arrange(date) %>% 
+  filter(
+    cases != 0,
+    last(cases) >= 10,
+    sum(cases != 0) >= 7
+    # sum(cases) != 0,
+    # sum(cases != 0) >= 7
+  ) %>% 
+  ungroup() %>% 
+  select(county,new.cases) %>% 
+  # uncount(new.cases) %>% 
+  group_by(county) %>% 
+  nest(new.cases) %>% 
+  mutate(R = purrr::map(data, function(df) EpiEstim::estimate_R(df$new.cases, 
+                                                                method="parametric_si",
+                                                                config = make_config(list(mean_si = 7.5, 
+                                                                                          std_si = 3.4)))$R)) %>% 
+  select(-data) %>% 
+  unnest(R) %>% 
+  ungroup()
+
+min.r <- 
+  df.r %>% 
+  summarize(max.r = min(`Quantile.0.025(R)`)) %>% 
+  pull()
+
+max.r <- 
+  df.r %>% 
+  summarize(max.r = max(`Quantile.0.975(R)`)) %>% 
+  pull()
+
+```
+
+
+
+```{r}
+library(geofacet)
+
+mygrid <- data.frame(
+  name = c("Douglas County", "Bayfield County", "Washburn County", "Sawyer County", "Ashland County", "Iron County", "Oneida County", "Vilas County", "Polk County", "Burnett County", "Barron County", "Chippewa County", "Rusk County", "Price County", "Lincoln County", "Langlade County", "Forest County", "Florence County", "Marinette County", "St. Croix County", "Dunn County", "Eau Claire County", "Clark County", "Taylor County", "Marathon County", "Shawano County", "Menominee County", "Oconto County", "Calumet County", "Door County", "Pierce County", "Pepin County", "Trempealeau County", "Jackson County", "Wood County", "Portage County", "Waushara County", "Waupaca County", "Outagamie County", "Brown County", "Kewaunee County", "Buffalo County", "La Crosse County", "Monroe County", "Juneau County", "Adams County", "Green Lake County", "Winnebago County", "Washington County", "Sheboygan County", "Manitowoc County", "Vernon County", "Richland County", "Columbia County", "Marquette County", "Dodge County", "Fond du Lac County", "Ozaukee County", "Crawford County", "Iowa County", "Sauk County", "Dane County", "Jefferson County", "Waukesha County", "Milwaukee County", "Grant County", "Lafayette County", "Green County", "Rock County", "Walworth County", "Kenosha County", "Racine County"),
+  code = c("douglas", "bayfield", "washburn", "sawyer", "ashland", "iron", "oneida", "vilas", "polk", "burnett", "barron", "chippewa", "rusk", "price", "lincoln", "langlade", "forest", "florence", "marinette", "st croix", "dunn", "eau claire", "clark", "taylor", "marathon", "shawano", "menominee", "oconto", "calumet", "door", "pierce", "pepin", "trempealeau", "jackson", "wood", "portage", "waushara", "waupaca", "outagamie", "brown", "kewaunee", "buffalo", "la crosse", "monroe", "juneau", "adams", "green lake", "winnebago", "washington", "sheboygan", "manitowoc", "vernon", "richland", "columbia", "marquette", "dodge", "fond du lac", "ozaukee", "crawford", "iowa", "sauk", "dane", "jefferson", "waukesha", "milwaukee", "grant", "lafayette", "green", "rock", "walworth", "kenosha", "racine"),
+  row = c(1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7, 7, 7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9),
+  col = c(3, 4, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 5, 6, 7, 8, 9, 10, 11, 5, 6, 7, 8, 9, 10, 11, 5, 6, 7, 8, 9, 10, 11),
+  stringsAsFactors = FALSE
+) %>% 
+  mutate(row = ifelse(name == "Burnett County", 2, row),
+         col = ifelse(name == "Polk County", 2, col),
+         col = col-1)
+
+```
+
+```{r}
+df.gg <- 
+  df.county %>% 
+  left_join(df.r) %>%
+  group_by(county) %>%
+  mutate(date = max.date-max(t_end)+t_end) %>%
+  ungroup() %>%
+  left_join(df, by = c("county","date")) %>% 
+  mutate(
+    # Date = lubridate::mdy("1/22/20")+t_end-1,
+    name = county %>%
+      str_c(" County"),
+    code = county %>%
+      str_remove(" County") %>%
+      str_to_lower() %>%
+      str_remove("[:punct:]")
+  ) %>%
+  group_by(county) %>%
+  mutate(
+    Risk = case_when(
+      last(date) == max.date & last(`Mean(R)`) < 1 ~ "Low",
+      last(date) == max.date & last(`Mean(R)`) < 1.2 ~ "Medium",
+      last(date) == max.date & last(`Mean(R)`) >= 1.2 ~ "High",
+      is.na(last(`Mean(R)`)) ~ "Low-Case Counts",
+      TRUE ~ NA_character_
+    )
+  ) %>% 
+  ungroup() %>%
+  mutate(
+    yintercept.1.00 = case_when(
+      !is.na(date) ~ 1.00,
+      TRUE ~ NA_real_
+    ),
+    yintercept.1.20 = case_when(
+      !is.na(date) ~ 1.20,
+      TRUE ~ NA_real_
+    )
+  ) %>% 
+  rename(Date = date) %>% 
+  rename(`Mean R0` = `Mean(R)`) %>% 
+  mutate(yyyy.mm.dd = Date,
+         Date = as.numeric(Date) * 24 * 60 * 60 * 1000)
+
+min.yyyy.mm.dd <- min.date
+max.yyyy.mm.dd <- max.date
+
+min.date <- as.numeric(min.date) * 24 * 60 * 60 * 1000
+max.date <- as.numeric(max.date) * 24 * 60 * 60 * 1000
+
+gg <- 
+  df.gg %>% 
+  ggplot() + 
+  geom_rect(data = df.gg %>%
+              filter(Date == max.date | is.na(Date)),
+            aes(fill = Risk,
+                xmin = min.date,
+                xmax = max.date,
+                ymin = 0,
+                ymax = max.r,
+                group = county,
+                text = paste0("</br>", name,
+                              "</br>Risk: ", Risk)),
+            alpha = 0.1) +
+  scale_fill_manual(breaks = c("High", "Medium", "Low", "Low-Case Counts"),
+                    values = c("red", "yellow", "green", "white")) +
+  geom_ribbon(aes(x = Date, y = `Mean R0`,
+                  ymin = `Quantile.0.025(R)`,
+                  ymax = `Quantile.0.975(R)`,
+                  text = ""),
+                  fill = "gray80",
+              alpha = 0.5) +
+  geom_hline(aes(yintercept = yintercept.1.00,
+                 text = ""),
+             color = "gray50",
+             alpha = 0.5,
+             size = 0.1) +
+  geom_hline(aes(yintercept = yintercept.1.20,
+                 text = ""),
+             color = "gray50",
+             alpha = 0.5,
+             size = 0.1) +
+  geom_line(aes(x = Date, y = `Mean R0`,
+                color = Risk,
+                text = ""),
+            alpha = 0.5) +
+  geom_line(aes(x = Date, y = `Mean R0`,
+                color = Risk,
+                text = paste0("</br>", name,
+                              "</br>Date: ", yyyy.mm.dd,
+                              "</br>Cases: ", cases,
+                              "</br>Mean: ", round(`Mean R0`,3),
+                              "</br>2.5 Percentile: ", round(`Quantile.0.025(R)`,3),
+                              "</br>97.5 Percentile: ", round(`Quantile.0.975(R)`,3))),
+            alpha = 1) +
+  scale_color_manual(breaks = c("High", "Medium", "Low", "Low-Case Counts"),
+                    values = c("red", "darkgoldenrod1", "darkgreen", "white")) +
+    # scale_color_gradient(
+  #   # guide = guide_colorbar(frame.colour = "black",
+  #   #                        frame.linewidth = 0.5,
+  #   #                        ticks.colour = "black",
+  #   #                        ticks.linewidth = 0.5),
+  #   low = "red1",
+  #   high = "purple4"
+  # ) +
+  facet_geo(~ code, grid = mygrid, label = "name") + 
+  theme_classic() + 
+  theme(
+        # axis.text.x = element_blank(),
+        # axis.line.x = element_blank(),
+        # axis.ticks.x = element_blank(),
+        axis.text.x = element_text(size = 4,
+                                   hjust = 1,
+                                   angle = 30),
+        axis.text.y = element_text(size = 4),
+        strip.background = element_rect(fill = "white",
+                                        color = "white"),
+        strip.text = element_text(size = 4,
+                                  margin = margin(0.1, 0, 0.1, 0, "lines"))
+  ) + 
+  theme(
+    panel.spacing = unit(0.0, "lines"),
+    legend.position = "none",
+    legend.key = element_rect(color = "black", size = 0.25)
+  )
+
+```
+
+## Instantaneous Reproduction Number $R_0$
+
+The instantaneous reproduction number $R_0$ represents the number of new infections estimated to stem from a single case (in a susceptible population). In other words, if $R_0$ is 2.5, then one person with the disease is expected to infect, on average, 2.5 others.
+
+An $R_0$ below 1 suggests that the number of cases is shrinking, possibly allowing societies to open back up. An $R_0$ above 1 indicates that the number of cases is growing, perhaps necessitating renewed lockdowns or other measures.
+
+## Interactive
+
+```{r}
+library(plotly)
+
+p <- 
+  gg %>% 
+  ggplotly(tooltip = "text") %>% 
+  layout(
+    xaxis = list(type = "date",
+                 tickformat = "%b %d"),
+    xaxis2 = list(type = "date",
+                 tickformat = "%b %d"),
+    xaxis3 = list(type = "date",
+                 tickformat = "%b %d"),
+    xaxis4 = list(type = "date",
+                 tickformat = "%b %d"),
+    xaxis5 = list(type = "date",
+                 tickformat = "%b %d"),
+    xaxis6 = list(type = "date",
+                 tickformat = "%b %d"),
+    xaxis7 = list(type = "date",
+                 tickformat = "%b %d"),
+    xaxis8 = list(type = "date",
+                 tickformat = "%b %d"),
+    xaxis9 = list(type = "date",
+                 tickformat = "%b %d"),
+    xaxis10 = list(type = "date",
+                 tickformat = "%b %d"),
+    xaxis11 = list(type = "date",
+                 tickformat = "%b %d"),
+    xaxis12 = list(type = "date",
+                 tickformat = "%b %d"),
+    xaxis13 = list(type = "date",
+                 tickformat = "%b %d"),
+    yaxis = list(type = "log",
+                 range = c(log10(min.r),log10(max.r))),
+    yaxis2 = list(type = "log",
+                  range = c(log10(min.r),log10(max.r))),
+    yaxis3 = list(type = "log",
+                  range = c(log10(min.r),log10(max.r))),
+    yaxis4 = list(type = "log",
+                  range = c(log10(min.r),log10(max.r))),
+    yaxis5 = list(type = "log",
+                  range = c(log10(min.r),log10(max.r))),
+    yaxis6 = list(type = "log",
+                  range = c(log10(min.r),log10(max.r))),
+    yaxis7 = list(type = "log",
+                  range = c(log10(min.r),log10(max.r))),
+    yaxis8 = list(type = "log",
+                  range = c(log10(min.r),log10(max.r))),
+    yaxis9 = list(type = "log",
+                  range = c(log10(min.r),log10(max.r)))
+  ) %>% 
+  layout(autosize = FALSE, width = 1400, height = 800) %>%
+  config(displaylogo = FALSE)
+
+p
+
+```
+
+\newpage
+
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+
+*This plot is interactive*: Hover over the plot for details on demand. Zoom, pan, or scale axes using the mouse or the modebar buttons in the top-right. Note: the interactive is best in full screen.
+
+\newpage
+
+## Methodology
+
+1. Estimate the instantaneous reproduction number $R_0$ of an epidemic, given the incidence time series and the serial interval distribution.
+
+<p class="indent">For the interactive, the color encodes the "risk" where <br> the plot is <span style="color:#FF0000"> red if the number of cases increases relatively fast </span>, <br><span style="color:#FFB90F"> yellow if the number of cases stays the same or increases relatively slow </span>, <br> and <span style="color:#006400"> green if the number of cases decreases </span>.</p>
+
+2. Plot the posterior mean (Mean R0) and 95% credible interval (2.5 Percentile and 97.5 Percentile) of the reproduction number $R_0$ in addition to reference lines ($R_0=1.00$,$R_0=1.20$).
+
+```{r}
+gg.dane <- 
+  df.gg %>% 
+  filter(county == "Dane") %>% 
+  ggplot() + 
+  geom_rect(data = df.gg %>%
+              filter(county == "Dane") %>% 
+              filter(Date == max.date | is.na(Date)),
+            aes(fill = Risk,
+                xmin = min.date,
+                xmax = max.date,
+                ymin = 0,
+                ymax = max.r,
+                group = county,
+                text = paste0("</br>", name,
+                              "</br>Risk: ", Risk)),
+            alpha = 0.1) +
+  scale_fill_manual(breaks = c("High", "Medium", "Low", "Low-Case Counts"),
+                    values = c("red", "yellow", "green", "white")) +
+  geom_ribbon(aes(x = Date, y = `Mean R0`,
+                  ymin = `Quantile.0.025(R)`,
+                  ymax = `Quantile.0.975(R)`,
+                  text = ""),
+                  fill = "gray80",
+              alpha = 0.5) +
+  geom_hline(aes(yintercept = yintercept.1.00,
+                 text = ""),
+             color = "gray50",
+             alpha = 0.5,
+             size = 0.5) +
+  geom_hline(aes(yintercept = yintercept.1.20,
+                 text = ""),
+             color = "gray50",
+             alpha = 0.5,
+             size = 0.5) +
+  geom_line(aes(x = Date, y = `Mean R0`,
+                color = Risk,
+                text = ""),
+            alpha = 0.5) +
+  geom_line(aes(x = Date, y = `Mean R0`,
+                color = Risk,
+                text = paste0("</br>", name,
+                              "</br>Date: ", yyyy.mm.dd,
+                              "</br>Cases: ", cases,
+                              "</br>Mean: ", round(`Mean R0`,3),
+                              "</br>2.5 Percentile: ", round(`Quantile.0.025(R)`,3),
+                              "</br>97.5 Percentile: ", round(`Quantile.0.975(R)`,3))),
+            alpha = 1) +
+  scale_color_manual(breaks = c("High", "Medium", "Low", "Low-Case Counts"),
+                    values = c("red", "darkgoldenrod1", "darkgreen", "white")) +
+    # scale_color_gradient(
+  #   # guide = guide_colorbar(frame.colour = "black",
+  #   #                        frame.linewidth = 0.5,
+  #   #                        ticks.colour = "black",
+  #   #                        ticks.linewidth = 0.5),
+  #   low = "red1",
+  #   high = "purple4"
+  # ) +
+  facet_wrap(vars(name)) + 
+  theme_classic() + 
+  theme(
+        # axis.text.x = element_blank(),
+        # axis.line.x = element_blank(),
+        # axis.ticks.x = element_blank(),
+        axis.text.x = element_text(size = 4,
+                                   hjust = 1,
+                                   angle = 30),
+        axis.text.y = element_text(size = 4),
+        strip.background = element_rect(fill = "white",
+                                        color = "white"),
+        strip.text = element_text(size = 12,
+                                  margin = margin(0.1, 0, 0.1, 0, "lines"))
+  ) + 
+  theme(
+    panel.spacing = unit(0.0, "lines"),
+    legend.position = "none",
+    legend.key = element_rect(color = "black", size = 0.25)
+  )
+
+```
+
+```{r out.width = "100%"}
+library(plotly)
+
+p <- 
+  gg.dane %>% 
+  ggplotly(tooltip = "text") %>% 
+  layout(
+    xaxis = list(type = "date",
+                 tickformat = "%b %d"),
+    yaxis = list(type = "log",
+                 range = c(log10(min.r),log10(max.r)))
+  ) %>% 
+  layout(autosize = FALSE, width = 700, height = 400) %>%
+  config(displaylogo = FALSE)
+
+p
+
+```
+
+*This plot is interactive*: Hover over the plot for details on demand. Zoom, pan, or scale axes using the mouse or the modebar buttons in the top-right.
+
+3. Geofacet a series of line plots for Wisconsin counties into a grid that strives to preserve some of the original geographical orientation of the entities.
+
+```{r}
+gg.map <- 
+  map_data("county") %>% 
+  filter(region == "wisconsin") %>% 
+  ggplot() + 
+  geom_polygon(aes(x = long, y = lat, 
+                   group = group),
+               color = "gray33",
+               fill = "white",
+               size = 1) + 
+  coord_quickmap() + 
+  theme_void()
+
+gg.grid <- 
+  mygrid %>% 
+  ggplot() + 
+  geom_tile(aes(x = col, y = -row),
+            color = "gray33",
+            fill = "white",
+            size = 1) + 
+  coord_quickmap() + 
+  theme_void()
+
+gg.wi <- 
+  df.gg %>% 
+  ggplot() + 
+  geom_rect(data = df.gg %>%
+              filter(yyyy.mm.dd == max.yyyy.mm.dd | is.na(Date)),
+            aes(fill = Risk,
+                xmin = min.yyyy.mm.dd,
+                xmax = max.yyyy.mm.dd,
+                ymin = 0,
+                ymax = max.r,
+                group = county,
+                text = paste0("</br>", name,
+                              "</br>Risk: ", Risk)),
+            alpha = 0.1) +
+  scale_fill_manual(breaks = c("High", "Medium", "Low", "Low-Case Counts"),
+                    values = c("red", "yellow", "green", "white")) +
+  geom_ribbon(aes(x = yyyy.mm.dd, y = `Mean R0`,
+                  ymin = `Quantile.0.025(R)`,
+                  ymax = `Quantile.0.975(R)`,
+                  text = ""),
+                  fill = "gray80",
+              alpha = 0.5) +
+  geom_hline(aes(yintercept = yintercept.1.00,
+                 text = ""),
+             color = "gray50",
+             alpha = 0.5,
+             size = 0.1) +
+  geom_hline(aes(yintercept = yintercept.1.20,
+                 text = ""),
+             color = "gray50",
+             alpha = 0.5,
+             size = 0.1) +
+  geom_line(aes(x = yyyy.mm.dd, y = `Mean R0`,
+                color = Risk,
+                text = ""),
+            alpha = 0.5) +
+  scale_color_manual(breaks = c("High", "Medium", "Low", "Low-Case Counts"),
+                    values = c("red", "darkgoldenrod1", "darkgreen", "white")) +
+    # scale_color_gradient(
+  #   # guide = guide_colorbar(frame.colour = "black",
+  #   #                        frame.linewidth = 0.5,
+  #   #                        ticks.colour = "black",
+  #   #                        ticks.linewidth = 0.5),
+  #   low = "red1",
+  #   high = "purple4"
+  # ) +
+  facet_geo(~ code, grid = mygrid, label = "name") +
+  labs(x = "Date") + 
+  theme_void() + 
+  theme(
+    # axis.text.x = element_blank(),
+    # axis.line.x = element_blank(),
+    # axis.ticks.x = element_blank(),
+    # axis.text.x = element_text(size = 4,
+    #                            hjust = 1,
+    #                            angle = 30),
+    # axis.text.y = element_text(size = 4),
+    # strip.background = element_rect(fill = "white",
+    #                                 color = "white"),
+    # strip.text = element_text(size = 4,
+    #                           margin = margin(0.1, 0, 0.1, 0, "lines"))
+    strip.background = element_blank(),
+    strip.text = element_blank()
+  ) + 
+  theme(
+    panel.spacing = unit(0.0, "lines"),
+    legend.position = "none",
+    legend.key = element_rect(color = "black", size = 0.25)
+  )
+
+```
+
+```{r out.width = "100%"}
+(gg.map / gg.grid) | gg.wi
+
+```
+
+## Contact
+
+We encourage suggestions of new features and improvements to make the visualizations more useful.  The authors can be contacted below.
+
+- Srikanth Aravamuthan (<aravamuthan@wisc.edu>)
+- Doerte Doepfer (<dopfer@wisc.edu>)
+- Steve Goldstein (<sgoldstein@wisc.edu>)
+
+## Sources
+
+AFI DSI COVID-19 Research Group. AFIDSI COVID-19 Dataset. 2020. Retrieved from <https://afidsi-covid19.s3.amazonaws.com/wi_county_data.csv>.
+
+## References
+
+Cori, A. et al. A new framework and software to estimate time-varying reproduction numbers during epidemics (AJE 2013). 
+
+Thompson R.N., Stockwin J.E., van Gaalen R.D., et al. Improved inference of time-varying reproduction numbers during infectious disease outbreaks. (Epidemics 2019).
+
+Wallinga, J. and P. Teunis. Different epidemic curves for severe acute respiratory syndrome reveal similar impacts of control measures (AJE 2004). 
+
+Reich, N.G. et al. Estimating incubation period distributions with coarse data (Statis. Med. 2009)
+
+## Appendix: Defining Risk
+
+Define "Risk" at time $t$ as
+
+$$
+  \textrm{Risk}_t = 
+    \begin{cases}
+      \textrm{High} & R_{0,t} \geq 1.20 \\
+      \textrm{Medium} & 1.00 \leq R_{0,t} < 1.20 \\
+      \textrm{Low} & R_{0,t} < 1.00 \\
+      \textrm{Low-Case Counts} & \textrm{cases}_t < 10 \\
+    \end{cases}
+$$
+
+where time $t$ is `r format(Sys.time(), '%B %d, %Y')`.
+
+<!-- ## Appendix: R Code -->
+
+```{r appendix, ref.label=knitr::all_labels(),echo=TRUE,eval=FALSE}
+```
