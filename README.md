@@ -10,4 +10,4 @@ Currently, most COVID-19 visualizations suffer from (1) overplotting, (2) lack o
 
 The interactive at the time of May 29, 2020 shows low-case counts for counties in the north and low-risk counties in the northeast, and low to high-risk counties in the east and northwest to southwest areas of the state. For example, Dane County can be easily identified as high risk. The R0 is above 1.2 and increasing in trend. The neighboring high-case count counties are either low-medium or low-high risk or decreasing in trend. Health system officials can increase hospital resources to meet local needs diverting it from neighboring lower risk areas. Currently, multiple health systems including Gundersen Health, Marshfield Clinic, and the Wisconsin Department of Health Services use this visualization to anticipate trends and alert health professionals a few critical days in advance.
 
-**Please see jhepc/results/instantaneous_r0_plotly.html for interactive.**
+**Please see [jhepc/results/instantaneous_r0_plotly.html](https://github.com/aravamu2/jhepc/blob/master/results/instantaneous_r0_plotly.html) for interactive.**
